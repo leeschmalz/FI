@@ -3,16 +3,17 @@ library(dplyr)
 library(ggplot2)
 
 project_path<-"/Users/leeschmalz/Documents/personal/money/"
-start_date <- "2022-09-27"
+start_date <- "2023-01-01"
 outpath<-paste0(project_path,start_date,"_",Sys.Date())
 dir.create(outpath)
 
-transactions <- fread("/Users/leeschmalz/Documents/GitHub/FI/current_transaction.csv") %>% mutate(accountRef.id = as.character(accountRef.id))
+transactions <- fread("/Users/leeschmalz/Documents/personal/money/current_transaction.csv") %>% mutate(accountRef.id = as.character(accountRef.id))
 
 transactions <- transactions %>% select(id,date,description,amount,accountRef.id,accountRef.name,accountRef.type,category.name)
 
 account_id_map <- c("5879268"="Lee Apple Card",
                     "5890586"="Nat Capital One",
+                    "5915178"="Nat Chase",
                     "4806917"="Lee Checking",
                     "5890571"="Nat Checking",
                     "5890570"="Nat Savings",
@@ -23,16 +24,19 @@ account_id_map <- c("5879268"="Lee Apple Card",
                     "4905677"="Lee Venmo",
                     "4806935"="Lee Visa",
                     "5879269"="Lee Chase",
+                    "5903399"="Lee Chase",
                     "4806916"="Lee Savings",
                     "4806984"="Lee Venmo",
                     "4806915"="Business Acct")
+
+transactions <- transactions %>% filter(date >= as.Date(start_date))
+
+transactions_orginal <- transactions
 
 transactions <- transactions %>% 
   mutate(accountRef.name = account_id_map[accountRef.id]) %>%
   filter(accountRef.type == "CreditAccount" | accountRef.name %like% "Venmo" | (accountRef.name=="Nat Checking" & category.name!="Transfer" & category.name != "Paycheck")) %>%
   mutate(person = if_else(accountRef.name %like% "Lee","Lee","Nat"))
-
-transactions <- transactions %>% filter(date > as.Date(start_date))
 
 # remove paying off credit cards
 transactions <- transactions %>% 
@@ -48,13 +52,24 @@ exempt_transaction_ids <- c("68537869_1393323982_0", # ring band
                          "68537869_1400260382_0", # lee plane ticket
                          "68537869_1400956354_0", # nat ireland ticket
                          "68537869_1400956367_0", # nat ireland ticket
-                         "68537869_1393324019_0"  # diamond
+                         "68537869_1393324019_0",  # diamond
+                         "68537869_1419840779_0", # lee used at work, reimbursed
+                         "68537869_1419840780_0", # lee jimmy johns at work, reimbursed
+                         "68537869_1407463243_0", # 1 password
+                         "68537869_1405898375_0", # spotify
+                         "68537869_1405898374_0", # spotify
+                         "68537869_1405898372_0", # spotify
+                         "68537869_1412822427_0" #spotify
                          ) 
+
+transactions$amount[which(transactions$description=="SUMMER HOUSE SANTAMONICA")] <- transactions$amount[which(transactions$description=="SUMMER HOUSE SANTAMONICA")] / 3
 
 exempt_transactions <- transactions %>% filter((id %in% exempt_transaction_ids)) 
 transactions <- transactions %>% filter(!(id %in% exempt_transaction_ids))
+removed_transactions <- transactions_orginal %>% anti_join(transactions,by="id")
 
 fwrite(exempt_transactions,paste0(outpath,"/exempt_transactions.csv"))
+fwrite(removed_transactions,paste0(outpath,"/all_removed_records.csv"))
 fwrite(transactions,paste0(outpath,"/transactions.csv"))
 
 # PLOT
@@ -103,3 +118,10 @@ print(transactions %>% group_by(person) %>% summarise(total_spent = -sum(amount)
 if(lee_spent>nat_spent){print(paste0("Nat owes: ",(nat_spent-lee_spent) / 2))}
 if(nat_spent>lee_spent){print(paste0("Lee owes: ",(nat_spent-lee_spent) / 2))}
 
+
+exclude_from_total_spent <- c("68537869_1407463289_0", # electric
+                              "68537869_1409284776_0") # car insurance
+
+print("discretionary spending:")
+print(-sum(filter(transactions,!(id %in% exclude_from_total_spent))$amount))
+                              

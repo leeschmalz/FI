@@ -3,8 +3,9 @@ library(dplyr)
 library(ggplot2)
 
 project_path<-"/Users/leeschmalz/Documents/personal/money/"
-start_date <- "2023-01-01"
-outpath<-paste0(project_path,start_date,"_",Sys.Date())
+start_date <- "2023-02-01"
+end_date <- "2023-03-01"
+outpath<-paste0(project_path,start_date,"_",end_date)
 dir.create(outpath)
 
 transactions <- fread("/Users/leeschmalz/Documents/personal/money/current_transaction.csv") %>% mutate(accountRef.id = as.character(accountRef.id))
@@ -29,7 +30,8 @@ account_id_map <- c("5879268"="Lee Apple Card",
                     "4806984"="Lee Venmo",
                     "4806915"="Business Acct")
 
-transactions <- transactions %>% filter(date >= as.Date(start_date))
+transactions <- transactions %>% filter(date >= as.Date(start_date),
+                                        date < as.Date(end_date))
 
 transactions_orginal <- transactions
 
@@ -46,7 +48,7 @@ transactions <- transactions %>%
 # remove transfer from venmo to bank
 transactions <- transactions %>% filter(!(description %like% "Transfer To" & accountRef.name %like% "Venmo"))
 
-# transactions that we are not splitting
+# transactions that we are not splitting, not included in any reporting
 exempt_transaction_ids <- c("68537869_1393323982_0", # ring band
                          "68537869_1393324013_0", # ring band
                          "68537869_1400260382_0", # lee plane ticket
@@ -59,8 +61,25 @@ exempt_transaction_ids <- c("68537869_1393323982_0", # ring band
                          "68537869_1405898375_0", # spotify
                          "68537869_1405898374_0", # spotify
                          "68537869_1405898372_0", # spotify
-                         "68537869_1412822427_0" #spotify
+                         "68537869_1412822427_0", #spotify
+                         "68537869_1422165128_0", # wedding photo
+                         "68537869_1422165127_0", # wedding airbnb
+                         "68537869_1429579659_0", # GPU refund
+                         "68537869_1431291705_0", # spotify
+                         "68537869_1423427848_0"  # spotify
                          ) 
+
+# these are not exempt, just reported separately
+travel <- c("68537869_1426202197_0",
+            "68537869_1423997861_0",
+            "68537869_1426441620_0",
+            "68537869_1426441618_0")
+
+# we still split these, but dont include in monthly totals
+exclude_from_total_spent <- c("68537869_1407463289_0", # electric
+                              "68537869_1409284776_0", # car insurance
+                              "68537869_1431291706_0" # electric
+                              )
 
 transactions$amount[which(transactions$description=="SUMMER HOUSE SANTAMONICA")] <- transactions$amount[which(transactions$description=="SUMMER HOUSE SANTAMONICA")] / 3
 
@@ -71,30 +90,34 @@ removed_transactions <- transactions_orginal %>% anti_join(transactions,by="id")
 fwrite(exempt_transactions,paste0(outpath,"/exempt_transactions.csv"))
 fwrite(removed_transactions,paste0(outpath,"/all_removed_records.csv"))
 fwrite(transactions,paste0(outpath,"/transactions.csv"))
+fwrite(filter(transactions,(id %in% travel)),paste0(outpath,"/travel_transactions.csv"))
 
 # PLOT
 transactions_plot <- transactions %>% 
   filter(amount<0) %>% #remove venmo and refunds from plots
+  filter(!(id %in% exclude_from_total_spent)) %>%
+  filter(!(id %in% travel)) %>%
   group_by(category.name) %>% 
   arrange(date) %>% 
   mutate(spent = cumsum(-amount)) %>%
   ungroup()
 
-cats <- transactions_plot %>% group_by(category.name) %>% summarise(total=sum(amount)) %>% filter(-total>300)
+cats <- transactions_plot %>% group_by(category.name) %>% summarise(total=sum(amount)) %>% filter(-total>300) 
 
 p<-ggplot(transactions_plot %>% semi_join(cats) %>% filter(!(category.name %like% "Venmo")),aes(x=date,y=spent,color=category.name)) +
   geom_point() +
-  geom_smooth(method="loess",se=F) +
-  ggtitle(paste0(start_date," to ",Sys.Date()))+
+  geom_smooth(method="lm",se=F,alpha=0.5) +
+  ggtitle(paste0(start_date," to ",as.Date(end_date)))+
   ylab("Amount")
 ggsave(paste0(outpath,"/spending_over_time_by_category.png"),width = 12,height = 7)
 
-p<-ggplot(transactions %>% arrange(date),aes(x=date,y=cumsum(-amount))) +
+transactions1 <- transactions %>% filter(!(id %in% travel)) %>% filter(!(id %in% exclude_from_total_spent))
+p<-ggplot(transactions1 %>% arrange(date),aes(x=date,y=cumsum(-amount))) +
   geom_point() +
   geom_smooth(method="loess",se=F) +
-  geom_hline(yintercept=-sum(transactions$amount),color="black",linetype="dashed") +
-  geom_text(aes(x=Sys.Date()-10,y=-sum(transactions$amount),label=-sum(transactions$amount)),nudge_y = 150)+
-  ggtitle(paste0(start_date," to ",Sys.Date())) +
+  geom_hline(yintercept=-sum(transactions1$amount),color="black",linetype="dashed") +
+  geom_text(aes(x=as.Date(end_date)-10,y=-sum(transactions1$amount),label=round(-sum(transactions1$amount),2) ),nudge_y = 150) +
+  ggtitle(paste0(start_date," to ",end_date," Excluding Travel and Monthly Bills")) +
   ylab("Amount")
 ggsave(paste0(outpath,"/spending_over_time.png"),width = 12,height = 7)
 
@@ -107,7 +130,7 @@ p<-ggplot(transactions_plot,aes(x=category.name,y=-amount,fill=month)) +
   geom_bar(stat = "sum",na.rm=T) + 
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
   guides(size = "none") +
-  ggtitle(paste0(start_date," to ",Sys.Date()))+
+  ggtitle(paste0(start_date," to ",as.Date(end_date)))+
   ylab("Amount")
 ggsave(paste0(outpath,"/spending_bar.png"),width = 12,height = 7)
 
@@ -119,9 +142,9 @@ if(lee_spent>nat_spent){print(paste0("Nat owes: ",(nat_spent-lee_spent) / 2))}
 if(nat_spent>lee_spent){print(paste0("Lee owes: ",(nat_spent-lee_spent) / 2))}
 
 
-exclude_from_total_spent <- c("68537869_1407463289_0", # electric
-                              "68537869_1409284776_0") # car insurance
-
 print("discretionary spending:")
-print(-sum(filter(transactions,!(id %in% exclude_from_total_spent))$amount))
+print(-sum(filter(transactions,!(id %in% exclude_from_total_spent) & !(id %in% travel))$amount))
                               
+print("travel")
+print(-sum(filter(transactions,(id %in% travel))$amount))
+

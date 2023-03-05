@@ -10,7 +10,30 @@ dir.create(outpath)
 
 transactions <- fread("/Users/leeschmalz/Documents/personal/money/current_transaction.csv") %>% mutate(accountRef.id = as.character(accountRef.id))
 
-transactions <- transactions %>% select(id,date,description,amount,accountRef.id,accountRef.name,accountRef.type,category.name)
+transactions <- transactions %>% select(id,
+                                        date,
+                                        description,
+                                        amount,
+                                        accountRef.id,
+                                        accountRef.name,
+                                        accountRef.type,
+                                        category.name)
+
+transactions <- transactions %>% #need to fix natalie's venmo on Mint. add manuall for now.
+  add_row(id="68537869_1234441618_0",
+         date=as.Date("2023-02-10"),
+         description="Ireland Car",
+         amount=-239,
+         accountRef.id="5890591",
+         accountRef.type="BankAccount",
+         category.name="Travel") %>%
+  add_row(id="68537869_234541618_0",
+          date=as.Date("2023-02-10"),
+          description="Girls weekend money back",
+          amount=68,
+          accountRef.id="5890591",
+          accountRef.type="BankAccount",
+          category.name="Restaraunt")
 
 account_id_map <- c("5879268"="Lee Apple Card",
                     "5890586"="Nat Capital One",
@@ -51,9 +74,6 @@ transactions <- transactions %>% filter(!(description %like% "Transfer To" & acc
 # transactions that we are not splitting, not included in any reporting
 exempt_transaction_ids <- c("68537869_1393323982_0", # ring band
                          "68537869_1393324013_0", # ring band
-                         "68537869_1400260382_0", # lee plane ticket
-                         "68537869_1400956354_0", # nat ireland ticket
-                         "68537869_1400956367_0", # nat ireland ticket
                          "68537869_1393324019_0",  # diamond
                          "68537869_1419840779_0", # lee used at work, reimbursed
                          "68537869_1419840780_0", # lee jimmy johns at work, reimbursed
@@ -73,7 +93,12 @@ exempt_transaction_ids <- c("68537869_1393323982_0", # ring band
 travel <- c("68537869_1426202197_0",
             "68537869_1423997861_0",
             "68537869_1426441620_0",
-            "68537869_1426441618_0")
+            "68537869_1426441618_0",
+            "68537869_1234441618_0",
+            "68537869_1400260382_0", # lee plane ticket
+            "68537869_1400956354_0", # nat ireland ticket
+            "68537869_1400956367_0" # nat ireland ticket
+            )
 
 # we still split these, but dont include in monthly totals
 exclude_from_total_spent <- c("68537869_1407463289_0", # electric
@@ -86,11 +111,13 @@ transactions$amount[which(transactions$description=="SUMMER HOUSE SANTAMONICA")]
 exempt_transactions <- transactions %>% filter((id %in% exempt_transaction_ids)) 
 transactions <- transactions %>% filter(!(id %in% exempt_transaction_ids))
 removed_transactions <- transactions_orginal %>% anti_join(transactions,by="id")
+travel_transactions <- filter(transactions,(id %in% travel))
+
 
 fwrite(exempt_transactions,paste0(outpath,"/exempt_transactions.csv"))
 fwrite(removed_transactions,paste0(outpath,"/all_removed_records.csv"))
 fwrite(transactions,paste0(outpath,"/transactions.csv"))
-fwrite(filter(transactions,(id %in% travel)),paste0(outpath,"/travel_transactions.csv"))
+fwrite(travel_transactions,paste0(outpath,"/travel_transactions.csv"))
 
 # PLOT
 transactions_plot <- transactions %>% 
